@@ -80,6 +80,7 @@ jobs:
           # X (Twitter) API 配置（可选）
           X_API_BEARER_TOKEN: ${{ secrets.X_API_BEARER_TOKEN }}
           # 运行环境标识
+          BARK_URL: ${{ secrets.BARK_URL }}
           GITHUB_ACTIONS: true
           # 时区设置
           TZ: Asia/Shanghai
