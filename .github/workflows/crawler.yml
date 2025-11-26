@@ -3,51 +3,66 @@ name: Hot News Crawler
 on:
   schedule:
     # 我们使用的是 github 官方提供的资源来进行的推送，而每个账号的资源是限额的，为了不被官方判定为滥用而面临封号的风险，不建议比半小时更低
-    - cron: "0 * * * *" # 每小时整点运行一次(实际有偏差) 或者 "*/30 * * * *" (每半小时执行一次) 或者 "*/30 0-14 * * *"(每天早上 8 点到晚上 10 点期间，每半小时运行一次)
-  workflow_dispatch:
+    # 注意：GitHub Actions 的定时任务可能有 ±20 分钟的偏差
+    # 配置：每天 8:00-22:00（北京时间）每 120 分钟（每 2 小时）运行一次
+    # UTC 时间：0-14 点，每 2 小时运行一次（北京时间 = UTC + 8）
+    - cron: "0 0-14/2 * * *" # 每天 8:00-22:00（北京时间）每 2 小时运行一次
+    # 其他可选配置：
+    # - cron: "0 * * * *" # 每小时整点运行一次
+    # - cron: "*/30 * * * *" # 每半小时执行一次
+    # - cron: "*/30 0-14 * * *" # 每天早上 8 点到晚上 10 点期间，每半小时运行一次（UTC时间，需要换算为北京时间）
+  workflow_dispatch: # 允许手动触发
 
 # 添加权限设置
 permissions:
-  contents: write
+  contents: write # 需要写入权限以提交生成的报告文件
 
 jobs:
   crawl:
     runs-on: ubuntu-latest
+    timeout-minutes: 15 # 设置超时时间为 15 分钟，防止任务卡死
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
         with:
-          python-version: "3.10"
+          fetch-depth: 1 # 只拉取最新提交，加快速度
 
-      - name: Install dependencies
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11" # 使用更新的 Python 版本
+          cache: 'pip' # 启用 pip 缓存，加快依赖安装速度
+
+      - name: 📦 Install dependencies
         run: |
+          echo "🔧 升级 pip..."
           python -m pip install --upgrade pip
+          echo "📥 安装项目依赖..."
           pip install -r requirements.txt
+          echo "✅ 依赖安装完成"
 
-      - name: Verify required files
+      - name: 🔍 Verify required files
         run: |
           echo "🔍 检查必需的配置文件..."
-
+          
           if [ ! -f config/config.yaml ]; then
             echo "❌ 错误: config/config.yaml 文件不存在"
             echo "请参考项目文档创建配置文件"
             exit 1
           fi
-
+          
           if [ ! -f config/frequency_words.txt ]; then
             echo "❌ 错误: config/frequency_words.txt 文件不存在"
             echo "请参考项目文档创建频率词配置文件"
             exit 1
           fi
-
+          
           echo "✅ 配置文件检查通过"
 
-      - name: Run crawler
+      - name: 🕷️ Run crawler
         env:
+          # 通知渠道配置（根据需要配置）
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -62,14 +77,46 @@ jobs:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           NTFY_SERVER_URL: ${{ secrets.NTFY_SERVER_URL }}
           NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
+          # X (Twitter) API 配置（可选）
+          X_API_BEARER_TOKEN: ${{ secrets.X_API_BEARER_TOKEN }}
+          # 运行环境标识
           BARK_URL: ${{ secrets.BARK_URL }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           GITHUB_ACTIONS: true
-        run: python main.py
-
-      - name: Commit and push if changes
+          # 时区设置
+          TZ: Asia/Shanghai
         run: |
+          echo "🚀 开始执行爬虫任务..."
+          echo "⏰ 当前时间: $(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S %Z')"
+          python main.py
+          echo "✅ 爬虫任务执行完成"
+
+      - name: 📝 Commit and push if changes
+        run: |
+          echo "📝 检查是否有文件变更..."
           git config --global user.name 'GitHub Actions'
           git config --global user.email 'actions@github.com'
+          
+          # 检查是否有变更
           git add -A
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto update by GitHub Actions at $(TZ=Asia/Shanghai date)" && git push)
+          if git diff --quiet && git diff --staged --quiet; then
+            echo "ℹ️ 没有文件变更，跳过提交"
+          else
+            echo "📤 检测到文件变更，准备提交..."
+            COMMIT_MSG="Auto update by GitHub Actions at $(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S %Z')"
+            git commit -m "$COMMIT_MSG"
+            git push
+            echo "✅ 文件已提交并推送"
+          fi
+
+      - name: 📊 Workflow Summary
+        if: always() # 无论成功或失败都执行
+        run: |
+          echo "## 🕷️ 爬虫任务执行结果" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ **状态**: 成功" >> $GITHUB_STEP_SUMMARY
+            echo "⏰ **执行时间**: $(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S %Z')" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **状态**: 失败" >> $GITHUB_STEP_SUMMARY
+            echo "请查看上方的错误日志" >> $GITHUB_STEP_SUMMARY
+          fi

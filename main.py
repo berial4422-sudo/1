@@ -478,6 +478,27 @@ class DataFetcher:
             id_value = id_info
             alias = id_value
 
+        # ========== 自定义数据源：X (Twitter) 平台 ==========
+        # 由于 newsnow API 目前不支持 X/Twitter，使用自定义数据获取器
+        if id_value in ["x", "twitter"]:
+            try:
+                from custom_sources.x_fetcher import XDataFetcher
+                # 优先使用 X API（如果配置了 Bearer Token），否则使用 Nitter 镜像
+                use_api = bool(os.getenv("X_API_BEARER_TOKEN"))
+                x_fetcher = XDataFetcher(use_api=use_api)
+                data = x_fetcher.fetch_trending()
+                if data:
+                    print(f"获取 {id_value} 成功（自定义数据源）")
+                    return json.dumps(data), id_value, alias
+            except ImportError as e:
+                print(f"X 数据获取器导入失败: {e}")
+                if "beautifulsoup4" in str(e).lower() or "bs4" in str(e).lower():
+                    print("提示：使用 Nitter 需要安装 beautifulsoup4: pip install beautifulsoup4")
+            except Exception as e:
+                print(f"X 数据获取失败: {e}")
+            return None, id_value, alias
+        # ========== 自定义数据源结束 ==========
+
         url = f"https://newsnow.busiyi.world/api/s?id={id_value}&latest"
 
         proxies = None

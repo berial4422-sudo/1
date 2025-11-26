@@ -1,0 +1,6 @@
+# Vercel Serverless Function 依赖
+# 注意：需要与项目根目录的 requirements.txt 保持一致
+requests>=2.32.5,<3.0.0
+pytz>=2025.2,<2026.0
+PyYAML>=6.0.3,<7.0.0
+
